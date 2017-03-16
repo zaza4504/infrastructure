@@ -23,4 +23,10 @@ Example to get all the records from HICSS
     
     sed -n -e '3055298,3067179 p' year.txt > HICSS_years.txt
   
+  
+  NOTE:
+  
+  The line of titles is one more than the line of authors and year. The reason is that one title record contains Russian character and is splitted into two lines. Has to fix it by hand to merge those two lines
+  
+  sed -n -e '330948 p'  title.txt
     
