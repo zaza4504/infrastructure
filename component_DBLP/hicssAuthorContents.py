@@ -19,9 +19,26 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 
-import pickle as p
+
 import itertools
 import codecs
+
+"""
+radius of the cluster
+"""
+def radiusofcluster(labels, nth, dismatrix):
+    idx = np.where(labels == nth)
+    idx = np.array(idx)
+    idx = idx.flatten()
+    dis = dismatrix[idx,nth]
+    
+    mindis = min(dis)
+    maxdis = max(dis)
+    
+    radius = maxdis
+    
+    return [mindis, maxdis, radius]
+        
 
 """
 show contents in the same cluster
@@ -202,6 +219,7 @@ hist = sum(Xarray)
 transformer = TfidfTransformer()
 
 tfidf = transformer.fit_transform(Xarray)
+tfidfarray = tfidf.toarray()
 
 featurenames = vectorizer.get_feature_names()
 
@@ -211,6 +229,7 @@ featurenames = vectorizer.get_feature_names()
 n = 10 
 
 km=KMeans(n_clusters=n, init='k-means++',n_init=50, verbose=1)
+
 km.fit(tfidf)
 
 # show the word cloud of the first cluster
@@ -221,41 +240,48 @@ km.fit(tfidf)
 
 # authors.index('Jukka Huhtamäki'.decode('utf-8'))
 
-authorIdx = 5622
+authorIdx = authors.index('Hannu Kärkkäinen'.decode('utf-8'))
 content=[]
 
-# let's test with a exist author, the author with index 3, in our list
+"""
+if user is not in the author list:
+otherwise we can use the tfidf feature directly
+""" 
 
-content.append(authorcontents[authorIdx])
-
-# reuse the CountVectorizer vocabulary
-
-reuseVect = CountVectorizer(vocabulary=vectorizer.vocabulary_)
-
-# generate word count for new content based on exist vocabulary
-
-contentvect = reuseVect.fit_transform(content)
-
-contentvectarray = contentvect.toarray();
-
-# append to the exist word vect array
-
-#newXarray = np.concatenate((Xarray,contentvectarray.reshape((1,len(contentvectarray)))),axis=0)
-newXarray = np.concatenate((Xarray,contentvectarray),axis=0)
-# tfidf 
-newtransformer = TfidfTransformer()
-
-newtfidf = newtransformer.fit_transform(newXarray)
-
-# feature tfidf array
-featuretfidf = newtfidf[-1].toarray()[0]
-
+#if authorIdx < 0:
+#    # let's test with a exist author, the author with index 3, in our list
+#
+#    content.append(authorcontents[authorIdx])
+#    
+#    # reuse the CountVectorizer vocabulary
+#
+#    reuseVect = CountVectorizer(vocabulary=vectorizer.vocabulary_)
+#
+#    # generate word count for new content based on exist vocabulary
+#
+#    contentvect = reuseVect.fit_transform(content)
+#
+#    contentvectarray = contentvect.toarray();
+#
+#    # append to the exist word vect array
+#
+#    #newXarray = np.concatenate((Xarray,contentvectarray.reshape((1,len(contentvectarray)))),axis=0)
+#    newXarray = np.concatenate((Xarray,contentvectarray),axis=0)
+#    # tfidf 
+#    newtransformer = TfidfTransformer()
+#
+#    newtfidf = newtransformer.fit_transform(newXarray)
+#
+#    # feature tfidf array
+#    featuretfidf = newtfidf[-1].toarray()[0]
+#else:
+featuretfidf = tfidfarray[authorIdx]
 
 # compute the distance between the given author and all the cluster centers
 dis = []
 
-for i in range(len(km.cluster_centers_)):
-    dis.append(distance(featuretfidf,km.cluster_centers_[i]))
+for i in km.cluster_centers_:
+    dis.append(distance(featuretfidf,i))
     
 # this author belongs to the closest cluster
     
@@ -271,41 +297,50 @@ print 'belongs to cluster: '
 print clusterid
 print '-----------------------'
 
-#def findneighbors(tfidffeature, cluster_centers, dismatrix)
-
 # distance matrix from k-means
 dismatrix = km.transform(tfidf)
 
-# compare all the other author's distance to the cluster center
-authordis = abs(dismatrix[:,clusterid] - min(dis))
 
-sort_index = authordis.argsort()
+# the range to find close authors around you based on the 
+# distance to the closest cluster center
 
-# compare all the other author's distance to the farest cluster center
-authordis = abs(dismatrix[:,farcluster] - max(dis))
+[mindis, maxdis, radius] = radiusofcluster(km.labels_, clusterid, dismatrix)
 
-sort_index_far = authordis.argsort()
+r = max(maxdis-min(dis), min(dis)-mindis)
 
-# pick 10 authors who has the close distance to the cluster center
-#closeauthors = sort_index[0:9]
+# all the authors in the same cluster
+#closeidx = np.where(((dismatrix[:,clusterid]>=(min(dis)-r)) & (dismatrix[:,clusterid]<=(min(dis)+r)))==True)[0]
+
+closeidx = np.where(km.labels_ == clusterid)
+closeidx = np.array(closeidx)
+closeidx = closeidx.flatten()
 
 
-# choose those authors have the similar distance to both cluster(closest and farest) centers
-# n define the range of top closest authors
-n = 1000
-closeauthorsidx = np.nonzero(np.in1d(sort_index[0:n], sort_index_far[0:n]))[0]
-closeauthors = sort_index[closeauthorsidx]
+faridx = np.where(((dismatrix[:,farcluster]>=(max(dis)-r)) & (dismatrix[:,farcluster]<=(max(dis)+r)))==True)[0]
 
-# remove the authors belongs to other clusters to ensure the 
-# rest authors are close to each other rather than just close
-# to the cluster center
+closeauthorsidx = np.nonzero(np.in1d(closeidx, faridx))[0]
+closeauthors = closeidx[closeauthorsidx]
 
-#closeauthors = closeauthors[km.labels_[closeauthors] == clusterid]
+# compute the distance between the user and all the closeauthors
+
+closeauthordis = []
+
+for i in closeauthors:
+    closeauthordis.append(distance(tfidfarray[authorIdx],tfidfarray[i]))
+
+closeauthordis = np.array(closeauthordis)
+
+closeauthors = closeauthors[closeauthordis.argsort()]
+
 
 print 'recommended authors who has similar research interests: '
 
+c = 0
 for i in closeauthors:
     print authors[i]
+    c = c + 1
+    if c == 10:
+        break
     
 
 # to visualize the result
