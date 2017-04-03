@@ -19,6 +19,10 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 
+import pickle as p
+import itertools
+import codecs
+
 """
 show contents in the same cluster
 """
@@ -32,11 +36,66 @@ def showcontents(labels, nth, allcontents):
         
     return contents
 
+"""
+check if there is digtial in the string
+"""
 def digstring(s):
     for i in s:
         if i.isdigit():
             return True
     return False
+    
+"""
+compute the distance between two points a and b
+"""
+def distance(a,b):
+    a = np.array(a);
+    b = np.array(b);
+    return np.sqrt(sum(np.square(a - b)))
+    
+"""
+"""
+def updatecoauthornetwork(net,authors,namelist):
+    #[r,c] = net.shape
+    end = len(authors)
+    
+    # list to save the postions(index) of the names in the authors[]
+    # in order to mark the co-authorship in the network(2d array)
+    pos = []
+    
+    i = 0
+    for name in namelist:
+        if name not in authors:
+            # new author, need to extend the network by 1
+            #padc = np.zeros((r,1))
+            #padr = np.zeros((1,c+1))
+            #net = np.concatenate((net,padc), axis=1)
+            #net = np.concatenate((net,padr), axis=0)
+            
+            #[r,c] = net.shape
+    
+            # increase the number of occurrence for him/her self
+            net[end+i,end+i] = net[end+i,end+i] + 1
+            
+            # will add the new author to the authors[] list
+            # so its position(indx) in the authors[] will be end+i
+            pos.append(end+i)
+            i = i + 1
+        else:
+            idx = authors.index(name)
+            net[idx,idx] = net[idx,idx] + 1
+            pos.append(idx)
+            
+    # update the network 
+    # https://docs.python.org/2/library/itertools.html
+    c=list(itertools.permutations(pos, 2))
+    
+    for pair in c:
+        net[pair] = net[pair] + 1
+                    
+    return net
+    
+    
 
 tokenizer = RegexpTokenizer(r'\w+')
 
@@ -49,7 +108,7 @@ sw = set(nltk.corpus.stopwords.words('english'))
 
 filename = './HICSS_titles.txt'
 
-
+"""
 with io.open(filename,'r',encoding='utf8') as f:
     #text = f.read()
     for line in f:
@@ -62,13 +121,28 @@ with io.open(filename,'r',encoding='utf8') as f:
         # collect all the words except digtals and stopwords
         newline= ' '.join([w for w in newline if (w.lower() not in sw) & ~(digstring(w))])
         titles.append(newline)
-        
+"""
+
+# use codecs        
+f = codecs.open(filename,'r','utf-8')
+for line in f:   
+    rawtitles.append(line)
+    newline=tokenizer.tokenize(line)
+    # collect all the words except digtals and stopwords
+    newline= ' '.join([w for w in newline if (w.lower() not in sw) & ~(digstring(w))])
+    titles.append(newline)
+# end use codecs
         
 filename = './HICSS_authors.txt'
 
 authors = []
 authorcontents = []
 
+
+# the co-author relationship matrix (2d array)
+coauthornet = np.zeros([20000,20000],dtype=int)
+
+"""
 i = 0
 with io.open(filename,'r',encoding='utf8') as f:
     for line in f:
@@ -85,6 +159,32 @@ with io.open(filename,'r',encoding='utf8') as f:
                 authorcontents[idx] = ' '.join([authorcontents[idx],titles[i]])
                         
         i = i + 1
+"""
+
+# use codecs
+i = 0
+f = codecs.open(filename,'r','utf-8')
+for line in f:
+    # split the authors by ','
+    newline = line.split(",")
+    # remove the last '\n' 
+    newline.remove('\r\n')
+    namelist = newline
+
+    coauthornet = updatecoauthornetwork(coauthornet,authors,namelist)    
+    
+    for name in newline:
+        if name not in authors:
+            authors.append(name)
+            authorcontents.append(titles[i])
+        else:    
+            idx = authors.index(name)
+            authorcontents[idx] = ' '.join([authorcontents[idx],titles[i]])
+                        
+    i = i + 1
+    print i
+# end use codecs        
+        
         
 vectorizer = CountVectorizer(max_df=0.95, min_df=1,stop_words='english')
 
@@ -97,7 +197,7 @@ analyze = vectorizer.build_analyzer()
 Xarray = X.toarray()
 hist = sum(Xarray)
 
-plt.plot(hist)
+#plt.plot(hist)
 
 transformer = TfidfTransformer()
 
@@ -110,8 +210,113 @@ featurenames = vectorizer.get_feature_names()
 # number of clusters
 n = 10 
 
-km=KMeans(n_clusters=n, init='k-means++',n_init=10, verbose=1)
+km=KMeans(n_clusters=n, init='k-means++',n_init=50, verbose=1)
 km.fit(tfidf)
 
 # show the word cloud of the first cluster
-wordcloudit(' '.join(showcontents(km.labels_, 0, authorcontents)))
+#wordcloudit(' '.join(showcontents(km.labels_, 0, authorcontents)))
+
+
+# gave the content of new author 
+
+# authors.index('Jukka Huhtamäki'.decode('utf-8'))
+
+authorIdx = 5622
+content=[]
+
+# let's test with a exist author, the author with index 3, in our list
+
+content.append(authorcontents[authorIdx])
+
+# reuse the CountVectorizer vocabulary
+
+reuseVect = CountVectorizer(vocabulary=vectorizer.vocabulary_)
+
+# generate word count for new content based on exist vocabulary
+
+contentvect = reuseVect.fit_transform(content)
+
+contentvectarray = contentvect.toarray();
+
+# append to the exist word vect array
+
+#newXarray = np.concatenate((Xarray,contentvectarray.reshape((1,len(contentvectarray)))),axis=0)
+newXarray = np.concatenate((Xarray,contentvectarray),axis=0)
+# tfidf 
+newtransformer = TfidfTransformer()
+
+newtfidf = newtransformer.fit_transform(newXarray)
+
+# feature tfidf array
+featuretfidf = newtfidf[-1].toarray()[0]
+
+
+# compute the distance between the given author and all the cluster centers
+dis = []
+
+for i in range(len(km.cluster_centers_)):
+    dis.append(distance(featuretfidf,km.cluster_centers_[i]))
+    
+# this author belongs to the closest cluster
+    
+clusterid = dis.index(min(dis))
+
+# farest cluster
+farcluster=dis.index(max(dis))
+
+print '-----------------------'
+print 'Author: ' 
+print authors[authorIdx] 
+print 'belongs to cluster: ' 
+print clusterid
+print '-----------------------'
+
+#def findneighbors(tfidffeature, cluster_centers, dismatrix)
+
+# distance matrix from k-means
+dismatrix = km.transform(tfidf)
+
+# compare all the other author's distance to the cluster center
+authordis = abs(dismatrix[:,clusterid] - min(dis))
+
+sort_index = authordis.argsort()
+
+# compare all the other author's distance to the farest cluster center
+authordis = abs(dismatrix[:,farcluster] - max(dis))
+
+sort_index_far = authordis.argsort()
+
+# pick 10 authors who has the close distance to the cluster center
+#closeauthors = sort_index[0:9]
+
+
+# choose those authors have the similar distance to both cluster(closest and farest) centers
+# n define the range of top closest authors
+n = 1000
+closeauthorsidx = np.nonzero(np.in1d(sort_index[0:n], sort_index_far[0:n]))[0]
+closeauthors = sort_index[closeauthorsidx]
+
+# remove the authors belongs to other clusters to ensure the 
+# rest authors are close to each other rather than just close
+# to the cluster center
+
+#closeauthors = closeauthors[km.labels_[closeauthors] == clusterid]
+
+print 'recommended authors who has similar research interests: '
+
+for i in closeauthors:
+    print authors[i]
+    
+
+# to visualize the result
+
+# word cloud of the cluster
+# wordcloudit(' '.join(showcontents(km.labels_, clusterid, authorcontents)))
+
+# word cloud of each close author, closeauthors[0], closeauthors[1] ... 
+# wordcloudit(authorcontents[closeauthors[0]])
+
+
+# co-authorship
+
+coauthornet = coauthornet[0:len(authors)-1, 0:len(authors)-1];
