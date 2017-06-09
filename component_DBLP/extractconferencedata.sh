@@ -6,12 +6,23 @@ function extractlines {
 	sed -n -e "$1 , $2 p" ../title.txt >> "${3}"_titles.txt
 	sed -n -e "$1 , $2 p" ../authors.txt >> "${3}"_authors.txt
 	sed -n -e "$1 , $2 p" ../year.txt >> "${3}"_years.txt
+	sed -n -e "$1 , $2 p" ../booktitle.txt >> "${3}"_booktitle.txt
 	#echo "new line" >> ${3}_year.txt
 }
 
 
 
 if [[ -n "$1" ]]; then
+        printf "Here are the conferences contain $1\n"
+        grep -w $1 ../booktitle.txt | sort | uniq
+        printf "Continue [Y/y]"
+
+        read input
+
+        if [ $input != "Y" ] || [ $input != "y" ];then
+                exit
+	fi
+
 	idx=`grep -nw $1 ../booktitle.txt | cut -f1 -d:` 
 else
     	printf "Usage: $0 Conference Name\nexample: $0 HICSS\n"
